@@ -22,6 +22,7 @@ import pwndbg.dbg_mod
 import pwndbg.enhance
 import pwndbg.lib.abi
 import pwndbg.lib.functions
+import pwndbg.lib.syscall
 from pwndbg.aglib.disasm.instruction import PwndbgInstruction
 from pwndbg.aglib.nearpc import c as N
 from pwndbg.lib.arch import Platform
@@ -43,6 +44,7 @@ def get(instruction: PwndbgInstruction) -> list[tuple[pwndbg.lib.functions.Argum
     if instruction.address != pwndbg.aglib.regs.pc:
         return []
 
+    is_syscall = False
     if instruction.call_like:
         abi = pwndbg.aglib.arch.function_abi
 
@@ -62,6 +64,7 @@ def get(instruction: PwndbgInstruction) -> list[tuple[pwndbg.lib.functions.Argum
         name = instruction.syscall_name
         abi = pwndbg.aglib.arch.syscall_abi
         target = None
+        is_syscall = True
 
         if name is None or abi is None:
             return []
@@ -88,6 +91,11 @@ def get(instruction: PwndbgInstruction) -> list[tuple[pwndbg.lib.functions.Argum
         # `objc_msgSend` and functions like it, which have definitions that are
         # rather barren of semantics in comparison.
         func = pwndbg.aglib.objc.try_resolve_call_at_current_pc(instruction)
+
+    if func is None and is_syscall and pwndbg.aglib.arch.platform == Platform.LINUX:
+        # Syscalls: use the kernel's signature for this architecture, since the
+        # libc wrapper of the same name may take different arguments (e.g. `clone`).
+        func = pwndbg.lib.syscall.syscall_signature(original_name, pwndbg.aglib.arch.name)
 
     if func is None:
         # If more specific call information can't be determined, use the regular

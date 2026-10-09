@@ -15,6 +15,9 @@ from pwnlib.constants.linux import sparc as linux_sparc
 from pwnlib.constants.linux import thumb as linux_thumb
 
 from pwndbg.lib.arch import PWNDBG_SUPPORTED_ARCHITECTURES_TYPE
+from pwndbg.lib.functions import Argument
+from pwndbg.lib.functions import Function
+from pwndbg.lib.functions import functions
 
 
 def _get_pwntools_arch_module(arch_name: PWNDBG_SUPPORTED_ARCHITECTURES_TYPE) -> Any:
@@ -78,3 +81,29 @@ def syscall_name_to_number(name: str, arch_name: PWNDBG_SUPPORTED_ARCHITECTURES_
         return int(value)
 
     return None
+
+
+def syscall_signature(name: str, arch_name: str) -> Function | None:
+    """
+    Return the Linux kernel signature of syscall `name` on `arch_name`, or None if unknown.
+
+    Unlike pwndbg.lib.functions (glibc/libc wrappers), this follows the kernel's
+    argument order, which can differ per architecture (e.g. `clone`).
+    """
+    from pwndbg.lib.syscalls_data import SYSCALLS
+
+    args = SYSCALLS.get(arch_name, {}).get(name)
+    if args is None:
+        return None
+
+    # Keep flag decoding (e.g. mmap's `prot`/`flags`) from the libc database
+    # when the libc wrapper has an argument with the same name.
+    libc_func = functions.get(name)
+    libc_flags = {a.name: a.flags for a in libc_func.args if a.flags} if libc_func else {}
+
+    return Function(
+        type="long",
+        derefcnt=0,
+        name=name,
+        args=[Argument(t, d, n, libc_flags.get(n)) for t, d, n in args],
+    )
